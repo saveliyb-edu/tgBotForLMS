@@ -15,7 +15,6 @@ import logging
 
 logging.basicConfig(level=logging.INFO)
 
-
 storage = MemoryStorage()
 
 bot = aiogram.Bot(token=Config.TOKEN)
@@ -25,12 +24,25 @@ dp = aiogram.Dispatcher(bot, storage=storage)
 dp.filters_factory.bind(IsAdminFilter)
 
 
+j = types.ChatPermissions(can_send_messages=True,
+                          can_send_media_messages=False,
+                          can_send_polls=False,
+                          can_send_other_messages=False,
+                          can_add_web_page_previews=False,
+                          can_change_info=False,
+                          can_invite_users=False,
+                          can_pin_messages=False
+                          )
+
+
+# bot.restrict_chat_member(message.chat.id, message.from_user.id, permissions=j, until_date=time()+600)
+
 async def message_counter(message: types.Message, flag=True):
     global df
     if len(df[(df["User_id"] == str(message.from_user.id)) & (df["Chat_id"] == str(message.chat.id))]) > 0:
         if flag:
             numb = int(df.loc[(df["User_id"] == str(message.from_user.id)) &
-                             (df["Chat_id"] == str(message.chat.id)), "message_count"]) + 1
+                              (df["Chat_id"] == str(message.chat.id)), "message_count"]) + 1
             df.loc[(df["User_id"] == str(message.from_user.id)) &
                    (df["Chat_id"] == str(message.chat.id)), "message_count"] = numb
     else:
@@ -58,14 +70,27 @@ async def check2karma(message: types.Message):
     return True
 
 
+async def check2lvl_up(message: types.Message) -> str:
+    counter = int(df.loc[(df["User_id"] == str(message.from_user.id)) & (df["Chat_id"] == str(message.chat.id)),
+                         "message_count"])
+    lvl = int(df.loc[(df["User_id"] == str(message.from_user.id)) & (df["Chat_id"] == str(message.chat.id)), "lvl"])
+    if lvl == Config.MAX_LEVEL:
+        return TEXT.MAX_LEVEL
+    elif Config.LEVELS[lvl + 1] <= counter:
+        df.loc[(df["User_id"] == str(message.from_user.id)) & (df["Chat_id"] == str(message.chat.id)), "lvl"] = lvl + 1
+        return TEXT.lvl_up(lvl + 1)
+    else:
+        return TEXT.not_suffice_to_level_up(Config.LEVELS[lvl + 1] - counter)
+
+
 async def update_karma(message: types.Message):
     global df
-    if "+" in message.text and not("-" in message.text) and await check2karma(message):
+    if "+" in message.text and not ("-" in message.text) and await check2karma(message):
         karma = int(df.loc[(df["User_id"] == str(message.reply_to_message.from_user.id)) &
                            (df["Chat_id"] == str(message.chat.id)), "karma"]) + 1
         df.loc[(df["User_id"] == str(message.reply_to_message.from_user.id)) &
                (df["Chat_id"] == str(message.chat.id)), "karma"] = karma
-    elif "-" in message.text and not("+" in message.text) and await check2karma(message):
+    elif "-" in message.text and not ("+" in message.text) and await check2karma(message):
         karma = int(df.loc[(df["User_id"] == str(message.reply_to_message.from_user.id)) &
                            (df["Chat_id"] == str(message.chat.id)), "karma"]) - 1
         df.loc[(df["User_id"] == str(message.reply_to_message.from_user.id)) &
@@ -89,8 +114,8 @@ df = read_df("chats.csv")
 
 @dp.message_handler(content_types=["new_chat_members"])
 async def on_user_joined(message: types.Message):
-    # print(time)
-    await bot.restrict_chat_member(message.chat.id, message.from_user.id, until_date=600)
+    await message_counter(message, flag=False)
+    await bot.restrict_chat_member(chat_id=message.chat.id, user_id=message.from_user.id, permissions=j)
 
 
 @dp.message_handler(is_admin=True, commands=["ban"])
@@ -113,16 +138,7 @@ async def start(message: types.Message):
 @dp.message_handler(commands=["lvl", "lvl_up", "up"])
 async def lvl_up(message: types.Message):
     await message_counter(message, flag=False)
-    counter = int(df.loc[(df["User_id"] == str(message.from_user.id)) & (df["Chat_id"] == str(message.chat.id)),
-                         "message_count"])
-    lvl = int(df.loc[(df["User_id"] == str(message.from_user.id)) & (df["Chat_id"] == str(message.chat.id)), "lvl"])
-    if lvl == Config.MAX_LEVEL:
-        await message.reply(TEXT.MAX_LEVEL)
-    elif Config.LEVELS[lvl + 1] <= counter:
-        df.loc[(df["User_id"] == str(message.from_user.id)) & (df["Chat_id"] == str(message.chat.id)), "lvl"] = lvl + 1
-        await message.reply(TEXT.lvl_up(lvl + 1))
-    else:
-        await message.reply(TEXT.not_suffice_to_level_up(Config.LEVELS[lvl + 1] - counter))
+    await message.reply(await check2lvl_up(message))
 
 
 @dp.message_handler(commands=["karma"])
@@ -158,4 +174,3 @@ if __name__ == '__main__':
     aiogram.executor.start_polling(dp)
 
 # bot.restrict_chat_member()
-# bot.restrict_chat_member(message.chat.id, message.from_user.id, until_date=time()+600)
