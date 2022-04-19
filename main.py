@@ -1,4 +1,5 @@
-from time import time
+# from time import time
+import time
 
 import aiogram
 from aiogram import types
@@ -18,24 +19,27 @@ logging.basicConfig(level=logging.INFO)
 storage = MemoryStorage()
 
 bot = aiogram.Bot(token=Config.TOKEN)
-dp = aiogram.Dispatcher(bot, storage=storage)
 
+dp = aiogram.Dispatcher(bot, storage=storage)
 # activate filters
+
+
 dp.filters_factory.bind(IsAdminFilter)
 
 
-j = types.ChatPermissions(can_send_messages=True,
-                          can_send_media_messages=False,
-                          can_send_polls=False,
-                          can_send_other_messages=False,
-                          can_add_web_page_previews=False,
-                          can_change_info=False,
-                          can_invite_users=False,
-                          can_pin_messages=False
-                          )
+def read_df(name, sep=";"):
+    global df
+    if os.path.exists("./name"):
+        df = pd.read_csv(f'{name}', sep=sep)
+    else:
+        df = pd.DataFrame(columns=[
+            "User_id", "Chat_id", "message_count", "lvl", "karma", "karma_time", "action_points"
+        ])
+    return df
 
 
-# bot.restrict_chat_member(message.chat.id, message.from_user.id, permissions=j, until_date=time()+600)
+df = read_df("chats.csv")
+
 
 async def message_counter(message: types.Message, flag=True):
     global df
@@ -43,6 +47,10 @@ async def message_counter(message: types.Message, flag=True):
         if flag:
             numb = int(df.loc[(df["User_id"] == str(message.from_user.id)) &
                               (df["Chat_id"] == str(message.chat.id)), "message_count"]) + 1
+            karma = int(df.loc[(df["User_id"] == str(message.from_user.id)) &
+                               (df["Chat_id"] == str(message.chat.id)), "karma"])
+            if karma > 10:
+                numb += karma // 10
             df.loc[(df["User_id"] == str(message.from_user.id)) &
                    (df["Chat_id"] == str(message.chat.id)), "message_count"] = numb
     else:
@@ -52,7 +60,9 @@ async def message_counter(message: types.Message, flag=True):
             "Chat_id": str(message.chat.id),
             "message_count": 0,
             "lvl": 1,
-            "karma": 0
+            "karma": 0,
+            "karma_time": int(time.time()),
+            "action_points": 2
         }, index=[0])
         df = pd.concat((df, df2), ignore_index=True)
     print(df[:])
@@ -66,11 +76,38 @@ async def check2karma(message: types.Message):
     if message.reply_to_message.from_user.id == message.from_user.id:
         await message.reply("Нельзя отмечать себя!")
         return False
+    karma_time = int(df.loc[(df["User_id"] == str(message.from_user.id)) &
+                            (df["Chat_id"] == str(message.chat.id)), "karma_time"])
+    timing = 60
+    print(karma_time, karma_time + timing, int(time.time()))
+    if karma_time + timing > int(time.time()):
+        print("True")
+        await message.reply(TEXT.not_update_karma(karma_time, timing))
+        return False
     await message_counter(message.reply_to_message, flag=False)
+    df.loc[(df["User_id"] == str(message.from_user.id)) &
+           (df["Chat_id"] == str(message.chat.id)), "karma_time"] = int(time.time())
     return True
 
 
 async def check2lvl_up(message: types.Message) -> str:
+    counter = int(df.loc[(df["User_id"] == str(message.from_user.id)) & (df["Chat_id"] == str(message.chat.id)),
+                         "message_count"])
+    lvl = int(df.loc[(df["User_id"] == str(message.from_user.id)) & (df["Chat_id"] == str(message.chat.id)), "lvl"])
+    if lvl == Config.MAX_LEVEL:
+        return TEXT.MAX_LEVEL
+    elif Config.LEVELS[lvl + 1] <= counter:
+        df.loc[(df["User_id"] == str(message.from_user.id)) & (df["Chat_id"] == str(message.chat.id)), "lvl"] = lvl + 1
+        await bot.restrict_chat_member(chat_id=message.chat.id,
+                                       user_id=message.from_user.id,
+                                       permissions=Config.LEVELS_for_PERMISIONS[lvl + 1]
+                                       )
+        return TEXT.lvl_up(lvl + 1)
+    else:
+        return TEXT.not_suffice_to_level_up(Config.LEVELS[lvl + 1] - counter)
+
+
+async def check2lvl_up_for_admin(message: types.Message) -> str:
     counter = int(df.loc[(df["User_id"] == str(message.from_user.id)) & (df["Chat_id"] == str(message.chat.id)),
                          "message_count"])
     lvl = int(df.loc[(df["User_id"] == str(message.from_user.id)) & (df["Chat_id"] == str(message.chat.id)), "lvl"])
@@ -99,23 +136,13 @@ async def update_karma(message: types.Message):
         return
 
 
-def read_df(name, sep=";"):
-    if os.path.exists("./name"):
-        df = pd.read_csv(f'{name}', sep=sep)
-    else:
-        df = pd.DataFrame(columns=[
-            "User_id", "Chat_id", "message_count", "lvl"
-        ])
-    return df
-
-
-df = read_df("chats.csv")
-
-
 @dp.message_handler(content_types=["new_chat_members"])
 async def on_user_joined(message: types.Message):
     await message_counter(message, flag=False)
-    await bot.restrict_chat_member(chat_id=message.chat.id, user_id=message.from_user.id, permissions=j)
+    await bot.restrict_chat_member(chat_id=message.chat.id,
+                                   user_id=message.from_user.id,
+                                   permissions=Config.LEVELS_for_PERMISIONS[1]
+                                   )
 
 
 @dp.message_handler(is_admin=True, commands=["ban"])
@@ -133,6 +160,13 @@ async def cmd_ban(message: types.Message):
 @dp.message_handler(commands=['start'])
 async def start(message: types.Message):
     await message.answer(TEXT.HELLO)
+
+
+@dp.message_handler(is_admin=True, commands=["lvl", "lvl_up", "up"])
+async def lvl_up(message: types.Message):
+    """костыль для админов"""
+    await message_counter(message, flag=False)
+    await message.reply(await check2lvl_up_for_admin(message))
 
 
 @dp.message_handler(commands=["lvl", "lvl_up", "up"])
@@ -172,5 +206,3 @@ async def echo(message: types.Message):
 
 if __name__ == '__main__':
     aiogram.executor.start_polling(dp)
-
-# bot.restrict_chat_member()
