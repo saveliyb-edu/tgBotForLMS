@@ -1,5 +1,7 @@
 import time
 
+import pandas as pd
+
 HELLO = """Привет я бот, подсчитывающий ссобщения и выдающий определенные права"""
 MAX_LEVEL = """О, похоже вы уже достигли максимального уровня"""
 REPLY_ANSWER = "Эта команда должна быть ответом на сообщение!"
@@ -45,4 +47,34 @@ def not_update_karma(karma_time, timing):
         f"PS. Следующий раз через {karma_time + timing - int(time.time())}"
 
 
+def most_activity_people_in_chat(df: pd.DataFrame):
+    text = "Самые активные люди чата:\n"
+    lst = list(df.columns)
+    name = lst.index("name")
+    # print(name)
+    count = lst.index("message_count")
+    k = 0
+    for i in df.itertuples(index=False):
+        k += 1
+        if k == 1:
+            text += f"🥇){i[name].capitalize()} - {i[count]}\n"
+        elif k == 2:
+            text += f"🥈){i[name].capitalize()} - {i[count]}\n"
+        elif k == 3:
+            text += f"🥉){i[name].capitalize()} - {i[count]}\n"
+        else:
+            text += f"{k}){i[name].capitalize()} - {i[count]}\n"
+    return text
 
+
+def reply_update_action_points(point):
+    return f"Ваши очки действий обнавлены до {point}"
+
+
+def reply_no_update_action_points(time_):
+    if time_ % 24:
+        return f"Ваши очки действий смогут обновиться через {time_ // 3600} часов и {time_ % 3660 // 60} минут {time_ % 60}"
+    if time_ % 60:
+        return f"Ваши очки действий смогут обновиться через {time_ % 3600 // 60} минут и {time_ % 60} секунд"
+    else:
+        return f"Ваши очки действий смогут обновиться через {time_ % 60} секунд"

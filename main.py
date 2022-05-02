@@ -3,6 +3,7 @@ import time
 
 import aiogram
 from aiogram import types
+from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.contrib.fsm_storage.memory import MemoryStorage
 import pandas as pd
 import os
@@ -21,9 +22,8 @@ storage = MemoryStorage()
 bot = aiogram.Bot(token=Config.TOKEN)
 
 dp = aiogram.Dispatcher(bot, storage=storage)
+
 # activate filters
-
-
 dp.filters_factory.bind(IsAdminFilter)
 
 
@@ -33,7 +33,7 @@ def read_df(name, sep=";"):
         df = pd.read_csv(f'{name}', sep=sep)
     else:
         df = pd.DataFrame(columns=[
-            "User_id", "Chat_id", "message_count", "lvl", "karma", "karma_time", "action_points"
+            "User_id", "Chat_id", "name", "message_count", "lvl", "karma", "karma_time", "action_points", "action_time"
         ])
     return df
 
@@ -54,15 +54,16 @@ async def message_counter(message: types.Message, flag=True):
             df.loc[(df["User_id"] == str(message.from_user.id)) &
                    (df["Chat_id"] == str(message.chat.id)), "message_count"] = numb
     else:
-        # if message.chat.id != додлать сравнение с id бота
         df2 = pd.DataFrame({
             "User_id": str(message.from_user.id),
             "Chat_id": str(message.chat.id),
+            "name": str(message.from_user.first_name),
             "message_count": 0,
             "lvl": 1,
             "karma": 0,
             "karma_time": int(time.time()),
-            "action_points": 2
+            "action_points": 2,
+            "action_time": int(time.time())
         }, index=[0])
         df = pd.concat((df, df2), ignore_index=True)
     print(df[:])
@@ -154,7 +155,7 @@ async def cmd_ban(message: types.Message):
     await message.bot.delete_message(message.chat.id, message.message_id)
     await message.bot.kick_chat_member(chat_id=message.chat.id, user_id=message.reply_to_message.from_user.id)
 
-    await message.reply_to_message.reply("Пользоавтель забанен\nПарвосудие свершилось :3")
+    await message.reply_to_message.reply("Пользоавтель забанен")
 
 
 @dp.message_handler(commands=['start'])
@@ -188,14 +189,113 @@ async def help(message: types.Message):
     await message.answer(TEXT.HELP)
 
 
-@dp.message_handler(commands=["info", "i"])
-async def info(message: types.Message):
-    count = df.loc[(df["Chat_id"] == str(message.chat.id)), "message_count"].sum()
-    active_users = len(df.loc[(df["Chat_id"] == str(message.chat.id)), "message_count"])
-    mean_lvl = df.loc[(df["Chat_id"] == str(message.chat.id)), "lvl"].mean()
-    mean_karma = df.loc[(df["Chat_id"] == str(message.chat.id)), "karma"].mean()
+@dp.message_handler(is_admin=True, commands=["mute", "m"])
+async def mute(message: types.Message):
+    global df
+    print(message.text)
+    if not message.reply_to_message:
+        await message.reply(TEXT.REPLY_ANSWER)
+        return
+    if len(message.text.split()) == 2:
+        try:
+            minute = int(message.text.split()[1])
+        except ValueError:
+            await message.reply("Укажите количество минут!")
+            return
+    else:
+        await message.reply("Укажите количество минут!")
+        return
+    point = int(df.loc[(df["User_id"] == str(message.from_user.id)) &
+                       (df["Chat_id"] == str(message.chat.id)), "action_points"])
+    if minute > 0 and point > 0:
+        await bot.restrict_chat_member(chat_id=message.chat.id,
+                                       user_id=message.reply_to_message.from_user.id,
+                                       permissions=types.ChatPermissions(can_send_messages=False,
+                                                                         can_send_media_messages=False,
+                                                                         can_send_polls=False,
+                                                                         can_send_other_messages=False,
+                                                                         can_add_web_page_previews=False,
+                                                                         can_change_info=False,
+                                                                         can_invite_users=False,
+                                                                         can_pin_messages=False
+                                                                         ),
+                                       until_date=int(time.time()) + minute * 60)
+        df.loc[(df["User_id"] == str(message.from_user.id)) &
+               (df["Chat_id"] == str(message.chat.id)), "action_points"] = point - 1
+        if point == 1:
+            df.loc[(df["User_id"] == str(message.from_user.id)) &
+                   (df["Chat_id"] == str(message.chat.id)), "action_time"] = time.time()
+    else:
+        await message.reply("Укажите количество минут!")
+        return
+    await message.reply_to_message.reply("Пользоавтель забмьючен")
+
+
+@dp.message_handler(commands=["unmute", "um"])
+async def unmute(message: types.Message):
+    global df
+    print(message.text)
+    if not message.reply_to_message:
+        await message.reply(TEXT.REPLY_ANSWER)
+        return
+    lvl = int(df.loc[(df["User_id"] == str(message.from_user.id)) &
+                       (df["Chat_id"] == str(message.chat.id)), "lvl"])
+    await bot.restrict_chat_member(chat_id=message.chat.id,
+                                   user_id=message.reply_to_message.from_user.id,
+                                   permissions=Config.LEVELS_for_PERMISIONS[lvl + 1]
+                                   )
+    await message.reply_to_message.reply("Пользоавтель размьючен")
+
+
+@dp.message_handler(commands=["update_action_points"])
+async def update_action_points(message: types.Message):
+    time_ = df.loc[(df["User_id"] == str(message.from_user.id)) &
+                   (df["Chat_id"] == str(message.chat.id)), "action_time"].to_dict()[0]
+    if int(time.time()) > time_ + 24 * 3600:
+        df.loc[(df["User_id"] == str(message.reply_to_message.from_user.id)) &
+               (df["Chat_id"] == str(message.chat.id)), "action_time"] = time.time()
+        lvl = int(df.loc[(df["User_id"] == str(message.from_user.id)) & (df["Chat_id"] == str(message.chat.id)), "lvl"])
+        df.loc[(df["User_id"] == str(message.reply_to_message.from_user.id)) &
+               (df["Chat_id"] == str(message.chat.id)), "action_time"] = Config.LEVELS_action_points[lvl]
+        await message.reply(TEXT.reply_update_action_points(Config.LEVELS_action_points[lvl]))
+    else:
+        await message.reply(TEXT.reply_no_update_action_points(time_ + 24 * 3600 - int(time.time())))
+
+
+@dp.message_handler(commands=["point"])
+async def check_point(message: types.Message):
+    points = df.loc[(df["User_id"] == str(message.from_user.id)) &
+           (df["Chat_id"] == str(message.chat.id)), "action_points"].to_dict()[0]
+    print(points)
+    await message.reply(f"У вас осталось {points} очков действий")
+
+
+@dp.message_handler(is_admin=True, commands=["statistics"])
+async def statistics(message: types.Message):
+    inline_kb_full = InlineKeyboardMarkup(row_width=2)
+    inline_btn_1 = InlineKeyboardButton('самые активные люди чата', callback_data='statistics_people_in_chat')
+    inline_btn_2 = InlineKeyboardButton('немного о чате', callback_data='info_about_chat')
+    inline_kb_full.add(inline_btn_1)
+    inline_kb_full.add(inline_btn_2)
+    await message.reply("выберите какую именно статистику вы хотите видеть?", reply_markup=inline_kb_full)
+
+
+@dp.callback_query_handler(text="statistics_people_in_chat")
+async def statistics_people_in_chat_for_admin(call: types.CallbackQuery):
+    global df
+    ans_df = df.loc[df["Chat_id"] == str(call.message.chat.id)].sort_values(by=["message_count"], ascending=False)[:5]
+
+    await call.message.answer(TEXT.most_activity_people_in_chat(ans_df))
+
+
+@dp.callback_query_handler(text="info_about_chat")
+async def info_about_chat(call: types.CallbackQuery):
+    count = df.loc[(df["Chat_id"] == str(call.message.chat.id)), "message_count"].sum()
+    active_users = len(df.loc[(df["Chat_id"] == str(call.message.chat.id)), "message_count"])
+    mean_lvl = df.loc[(df["Chat_id"] == str(call.message.chat.id)), "lvl"].mean()
+    mean_karma = df.loc[(df["Chat_id"] == str(call.message.chat.id)), "karma"].mean()
     print(count, active_users, mean_lvl, mean_karma)
-    await message.answer(TEXT.info(count, active_users, round(mean_lvl, 2), round(mean_karma, 2)))
+    await call.message.answer(TEXT.info(count, active_users, round(mean_lvl, 2), round(mean_karma, 2)))
 
 
 @dp.message_handler()

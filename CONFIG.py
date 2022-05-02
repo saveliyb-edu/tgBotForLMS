@@ -11,14 +11,14 @@ class Config:
         5: 25,
         6: 28
     }
-    # can_send_messages = True,
-    # can_send_media_messages = True,
-    # can_send_polls = True,
-    # can_send_other_messages = True,
-    # can_add_web_page_previews = True,
-    # can_change_info = False,
-    # can_invite_users = True,
-    # can_pin_messages = False
+    LEVELS_action_points = {
+        1: 0,
+        2: 2,
+        3: 3,
+        4: 5,
+        5: 7,
+        6: 10
+    }
 
     LEVELS_for_PERMISIONS = {
         1: types.ChatPermissions(can_send_messages=True,
