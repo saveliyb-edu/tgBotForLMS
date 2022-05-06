@@ -3,6 +3,7 @@ from aiogram.dispatcher.filters import BoundFilter
 
 
 class IsAdminFilter(BoundFilter):
+    """фидльтр для проверки на админа"""
     key = "is_admin"
 
     def __init__(self, is_admin):

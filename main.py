@@ -1,3 +1,4 @@
+import asyncio
 import time
 
 import aiogram
@@ -24,17 +25,15 @@ bot = aiogram.Bot(token=Config.TOKEN)
 
 dp = aiogram.Dispatcher(bot, storage=storage)
 
-# activate filters
+# активируем фильтр админа
 dp.filters_factory.bind(IsAdminFilter)
 
 df = read_df("chats.csv")
-columns = ["User_id", "name", "message_count", "karma"]
-df_global = pd.DataFrame(columns=columns)
-
-# new_cat()
+df_global = read_df("global.csv", is_global=True)
 
 
 async def message_counter(message: types.Message, flag=True):
+    """счетчик сообщений"""
     global df, df_global
     if len(df[(df["User_id"] == str(message.from_user.id)) & (df["Chat_id"] == str(message.chat.id))]) > 0:
         if flag:
@@ -80,6 +79,7 @@ async def message_counter(message: types.Message, flag=True):
 
 
 async def check2karma(message: types.Message):
+    """проверка кармы"""
     if not message.reply_to_message:
         await message.reply(TEXT.REPLY_ANSWER)
         return False
@@ -102,6 +102,7 @@ async def check2karma(message: types.Message):
 
 
 async def check2lvl_up(message: types.Message) -> str:
+    """повышение уровня пользователя"""
     counter = int(df.loc[(df["User_id"] == str(message.from_user.id)) & (df["Chat_id"] == str(message.chat.id)),
                          "message_count"])
     lvl = int(df.loc[(df["User_id"] == str(message.from_user.id)) & (df["Chat_id"] == str(message.chat.id)), "lvl"])
@@ -119,6 +120,7 @@ async def check2lvl_up(message: types.Message) -> str:
 
 
 async def check2lvl_up_for_admin(message: types.Message) -> str:
+    """костыль для админа"""
     counter = int(df.loc[(df["User_id"] == str(message.from_user.id)) & (df["Chat_id"] == str(message.chat.id)),
                          "message_count"])
     lvl = int(df.loc[(df["User_id"] == str(message.from_user.id)) & (df["Chat_id"] == str(message.chat.id)), "lvl"])
@@ -132,17 +134,8 @@ async def check2lvl_up_for_admin(message: types.Message) -> str:
 
 
 async def update_karma(message: types.Message):
+    """обновление кармы пользователя"""
     global df
-    # df2 = df.loc[(df["User_id"] == str(message.from_user.id)) &
-    #                    (df["Chat_id"] == str(message.chat.id))]
-    # if not df2.empty:
-    #     action = int(df.loc[(df["User_id"] == str(message.from_user.id)) &
-    #                 (df["Chat_id"] == str(message.chat.id)), "action_points"])
-    #     print(f"action: {action}")
-    #     if action > 0:
-            # if await check2karma(message):
-                # df.loc[(df["User_id"] == str(message.from_user.id)) &
-                #        (df["Chat_id"] == str(message.chat.id)), "action_points"] = action - 1
     if "+" in message.text and not ("-" in message.text) and await check2karma(message):
         df2 = df.loc[(df["User_id"] == str(message.from_user.id)) &
                      (df["Chat_id"] == str(message.chat.id))]
@@ -175,16 +168,11 @@ async def update_karma(message: types.Message):
                        (df["Chat_id"] == str(message.chat.id)), "karma"] = karma
             else:
                 await message.reply("у вас не достаточно очков действий. обновите их")
-    #         else:
-    #             return
-    #     else:
-    #         await message.reply("у вас не достаточно очков действий. обновите их")
-    #         return
-    # return
 
 
 @dp.message_handler(content_types=["new_chat_members"])
 async def on_user_joined(message: types.Message):
+    """при вхождению в чат выдать пользователю разрешения и зарегистрировать его в df"""
     await message_counter(message, flag=False)
     await bot.restrict_chat_member(chat_id=message.chat.id,
                                    user_id=message.from_user.id,
@@ -194,6 +182,7 @@ async def on_user_joined(message: types.Message):
 
 @dp.message_handler(is_admin=True, commands=["ban", "kick", "b"])
 async def cmd_ban(message: types.Message):
+    """бан пользователя"""
     if not message.reply_to_message:
         await message.reply(TEXT.REPLY_ANSWER)
         return
@@ -218,12 +207,14 @@ async def lvl_up(message: types.Message):
 
 @dp.message_handler(commands=["lvl", "lvl_up", "up"])
 async def lvl_up(message: types.Message):
+    """повысить lvl юзера"""
     await message_counter(message, flag=False)
     await message.reply(await check2lvl_up(message))
 
 
 @dp.message_handler(commands=["karma"])
 async def check_my_karma(message: types.Message):
+    """посмотреть карму юзера"""
     global df
     await message_counter(message, flag=False)
     karma = int(df.loc[(df["User_id"] == str(message.from_user.id)) & (df["Chat_id"] == str(message.chat.id)), "karma"])
@@ -232,16 +223,19 @@ async def check_my_karma(message: types.Message):
 
 @dp.message_handler(is_admin=True, commands=["admin_help", "ah", "ahelp", "adminhelp"])
 async def admin_help(message: types.Message):
+    """справка админа"""
     await message.answer(TEXT.ADMIN_HELP)
 
 
 @dp.message_handler(commands=["help", "h"])
 async def help(message: types.Message):
+    """спарвка обычного юзера"""
     await message.answer(TEXT.HELP)
 
 
 @dp.message_handler(is_admin=True, commands=["mute", "m"])
 async def mute(message: types.Message):
+    """замьютить пользователя"""
     global df
     print(message.text)
     if not message.reply_to_message:
@@ -284,6 +278,7 @@ async def mute(message: types.Message):
 
 @dp.message_handler(commands=["unmute", "um"])
 async def unmute(message: types.Message):
+    """размьютить пользователя"""
     global df
     print(message.text)
     if not message.reply_to_message:
@@ -300,6 +295,7 @@ async def unmute(message: types.Message):
 
 @dp.message_handler(commands=["update_action_points"])
 async def update_action_points(message: types.Message):
+    """оюновить очки действий пользователя"""
     time_ = df.loc[(df["User_id"] == str(message.from_user.id)) &
                    (df["Chat_id"] == str(message.chat.id)), "action_time"].to_dict()[0]
     if int(time.time()) > time_ + 24 * 3600:
@@ -315,8 +311,7 @@ async def update_action_points(message: types.Message):
 
 @dp.message_handler(commands=["point"])
 async def check_point(message: types.Message):
-    # points = df.loc[(df["User_id"] == str(message.from_user.id)) &
-    #                 (df["Chat_id"] == str(message.chat.id)), "action_points"].to_dict()[0]
+    """посмотреть сколько очков действий у юзера сейчас"""
     points = int(df.loc[(df["User_id"] == str(message.from_user.id)) & (df["Chat_id"] == str(message.chat.id)), "action_points"])
     print(points)
     await message.reply(f"У вас осталось {points} очков действий")
@@ -324,6 +319,7 @@ async def check_point(message: types.Message):
 
 @dp.message_handler(is_admin = True, commands=["prefix", "p"])
 async def set_prefix(message: types.Message):
+    """изменение префикса админа (кроме создателя чата)"""
     prefix = message.text.split()[-1]
     ans = check_prefix(prefix)
     if ans == "no_len":
@@ -340,6 +336,7 @@ async def set_prefix(message: types.Message):
 
 @dp.message_handler(commands=["statistics"])
 async def statistics(message: types.Message):
+    """обработчик команды статистики"""
     inline_kb_full = InlineKeyboardMarkup(row_width=2)
     inline_btn_1 = InlineKeyboardButton('самые активные люди чата', callback_data='statistics_people_in_chat')
     inline_btn_2 = InlineKeyboardButton('немного о чате', callback_data='info_about_chat')
@@ -352,6 +349,7 @@ async def statistics(message: types.Message):
 
 @dp.callback_query_handler(text="statistics_people_in_chat")
 async def statistics_people_in_chat(call: types.CallbackQuery):
+    """статистика активных пользвателей чата"""
     ans_df = df.loc[df["Chat_id"] == str(call.message.chat.id)].sort_values(by=["message_count_in_fact"],
                                                                             ascending=False)[:5]
 
@@ -360,6 +358,7 @@ async def statistics_people_in_chat(call: types.CallbackQuery):
 
 @dp.callback_query_handler(text="info_about_chat")
 async def info_about_chat(call: types.CallbackQuery):
+    """статистика по чату"""
     count = df.loc[(df["Chat_id"] == str(call.message.chat.id)), "message_count_in_fact"].sum()
     active_users = len(df.loc[(df["Chat_id"] == str(call.message.chat.id)), "message_count"])
     mean_lvl = df.loc[(df["Chat_id"] == str(call.message.chat.id)), "lvl"].mean()
@@ -370,6 +369,7 @@ async def info_about_chat(call: types.CallbackQuery):
 
 @dp.callback_query_handler(text="statistics_people_in_world")
 async def statistics_people_in_world(call: types.CallbackQuery):
+    """статистика всех пользователей бота"""
     ans_df = df_global.sort_values(by=["message_count"], ascending=False)[:5]
 
     await call.message.answer(TEXT.most_activity_people(ans_df, in_chat=False))
@@ -377,18 +377,29 @@ async def statistics_people_in_world(call: types.CallbackQuery):
 
 @dp.message_handler(commands=["cat", "new_cat"])
 async def new_cat_for_chat(message: types.Message):
+    """какой интернет может быть без кошек?"""
     photo = await new_cat(flag=False)
     await message.answer_photo(photo)
 
 
 @dp.message_handler()
-async def echo(message: types.Message):
+async def main(message: types.Message):
+    """обработчик всех сообщений не связанных с командой"""
     if message.text[0] == "/":
         await message.reply("Мне жаль, я не знаю такую команду.\nИспользуй /help что бы посмотреть что я умею")
     await update_karma(message)
     await message_counter(message)
-    # print(message.chat.shifted_id)
 
+
+async def loop():
+    """сохранение df каждые пол часа"""
+    await asyncio.sleep(1800)
+    df.to_csv("chats.csv", sep=";")
+    df_global.to_csv("global.csv", sep=";")
+
+if os.name == 'nt':
+    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
 if __name__ == '__main__':
     aiogram.executor.start_polling(dp)
+    asyncio.run(loop())
