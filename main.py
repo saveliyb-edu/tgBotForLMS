@@ -1,17 +1,18 @@
-# from time import time
 import time
 
 import aiogram
+import requests
 from aiogram import types
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.contrib.fsm_storage.memory import MemoryStorage
-import pandas as pd
-import os
+
+import CONFIG
 import TEXT
 
 from filters import IsAdminFilter
 
 from CONFIG import Config
+from func import *
 
 import logging
 
@@ -26,39 +27,40 @@ dp = aiogram.Dispatcher(bot, storage=storage)
 # activate filters
 dp.filters_factory.bind(IsAdminFilter)
 
-
-def read_df(name, sep=";"):
-    global df
-    if os.path.exists("./name"):
-        df = pd.read_csv(f'{name}', sep=sep)
-    else:
-        df = pd.DataFrame(columns=[
-            "User_id", "Chat_id", "name", "message_count", "lvl", "karma", "karma_time", "action_points", "action_time"
-        ])
-    return df
-
-
 df = read_df("chats.csv")
+columns = ["User_id", "name", "message_count", "karma"]
+df_global = pd.DataFrame(columns=columns)
+
+# new_cat()
 
 
 async def message_counter(message: types.Message, flag=True):
-    global df
+    global df, df_global
     if len(df[(df["User_id"] == str(message.from_user.id)) & (df["Chat_id"] == str(message.chat.id))]) > 0:
         if flag:
             numb = int(df.loc[(df["User_id"] == str(message.from_user.id)) &
                               (df["Chat_id"] == str(message.chat.id)), "message_count"]) + 1
             karma = int(df.loc[(df["User_id"] == str(message.from_user.id)) &
                                (df["Chat_id"] == str(message.chat.id)), "karma"])
+
+            numb_ = numb
+
             if karma > 10:
-                numb += karma // 10
+                numb_ += karma // 10
+
             df.loc[(df["User_id"] == str(message.from_user.id)) &
-                   (df["Chat_id"] == str(message.chat.id)), "message_count"] = numb
+                   (df["Chat_id"] == str(message.chat.id)), "message_count"] = numb_
+            df.loc[(df["User_id"] == str(message.from_user.id)) &
+                   (df["Chat_id"] == str(message.chat.id)), "message_count_in_fact"] = numb
+
+            df_global.loc[(df["User_id"] == str(message.from_user.id)), "message_count"] = numb
     else:
         df2 = pd.DataFrame({
             "User_id": str(message.from_user.id),
             "Chat_id": str(message.chat.id),
             "name": str(message.from_user.first_name),
             "message_count": 0,
+            "message_count_in_fact": 0,
             "lvl": 1,
             "karma": 0,
             "karma_time": int(time.time()),
@@ -66,6 +68,14 @@ async def message_counter(message: types.Message, flag=True):
             "action_time": int(time.time())
         }, index=[0])
         df = pd.concat((df, df2), ignore_index=True)
+
+        df2 = pd.DataFrame({
+            "User_id": str(message.from_user.id),
+            "name": str(message.from_user.first_name),
+            "message_count": 0,
+            "karma": 0
+        }, index=[0])
+        df_global = pd.concat((df_global, df2), ignore_index=True)
     print(df[:])
 
 
@@ -79,7 +89,7 @@ async def check2karma(message: types.Message):
         return False
     karma_time = int(df.loc[(df["User_id"] == str(message.from_user.id)) &
                             (df["Chat_id"] == str(message.chat.id)), "karma_time"])
-    timing = 60
+    timing = CONFIG.Config.TIMING
     print(karma_time, karma_time + timing, int(time.time()))
     if karma_time + timing > int(time.time()):
         print("True")
@@ -123,18 +133,54 @@ async def check2lvl_up_for_admin(message: types.Message) -> str:
 
 async def update_karma(message: types.Message):
     global df
+    # df2 = df.loc[(df["User_id"] == str(message.from_user.id)) &
+    #                    (df["Chat_id"] == str(message.chat.id))]
+    # if not df2.empty:
+    #     action = int(df.loc[(df["User_id"] == str(message.from_user.id)) &
+    #                 (df["Chat_id"] == str(message.chat.id)), "action_points"])
+    #     print(f"action: {action}")
+    #     if action > 0:
+            # if await check2karma(message):
+                # df.loc[(df["User_id"] == str(message.from_user.id)) &
+                #        (df["Chat_id"] == str(message.chat.id)), "action_points"] = action - 1
     if "+" in message.text and not ("-" in message.text) and await check2karma(message):
-        karma = int(df.loc[(df["User_id"] == str(message.reply_to_message.from_user.id)) &
-                           (df["Chat_id"] == str(message.chat.id)), "karma"]) + 1
-        df.loc[(df["User_id"] == str(message.reply_to_message.from_user.id)) &
-               (df["Chat_id"] == str(message.chat.id)), "karma"] = karma
-    elif "-" in message.text and not ("+" in message.text) and await check2karma(message):
-        karma = int(df.loc[(df["User_id"] == str(message.reply_to_message.from_user.id)) &
-                           (df["Chat_id"] == str(message.chat.id)), "karma"]) - 1
-        df.loc[(df["User_id"] == str(message.reply_to_message.from_user.id)) &
-               (df["Chat_id"] == str(message.chat.id)), "karma"] = karma
-    else:
-        return
+        df2 = df.loc[(df["User_id"] == str(message.from_user.id)) &
+                     (df["Chat_id"] == str(message.chat.id))]
+        if not df2.empty:
+            action = int(df.loc[(df["User_id"] == str(message.from_user.id)) &
+                                (df["Chat_id"] == str(message.chat.id)), "action_points"])
+            print(f"action: {action}")
+            if action > 0:
+                df.loc[(df["User_id"] == str(message.from_user.id)) &
+                       (df["Chat_id"] == str(message.chat.id)), "action_points"] = action - 1
+                karma = int(df.loc[(df["User_id"] == str(message.reply_to_message.from_user.id)) &
+                                   (df["Chat_id"] == str(message.chat.id)), "karma"]) + 1
+                df.loc[(df["User_id"] == str(message.reply_to_message.from_user.id)) &
+                       (df["Chat_id"] == str(message.chat.id)), "karma"] = karma
+            else:
+                await message.reply("у вас не достаточно очков действий. обновите их")
+    elif "-" in message.text and not ("+" in message.text and await check2karma(message)):
+        df2 = df.loc[(df["User_id"] == str(message.from_user.id)) &
+                     (df["Chat_id"] == str(message.chat.id))]
+        if not df2.empty:
+            action = int(df.loc[(df["User_id"] == str(message.from_user.id)) &
+                                (df["Chat_id"] == str(message.chat.id)), "action_points"])
+            print(f"action: {action}")
+            if action > 0:
+                df.loc[(df["User_id"] == str(message.from_user.id)) &
+                       (df["Chat_id"] == str(message.chat.id)), "action_points"] = action - 1
+                karma = int(df.loc[(df["User_id"] == str(message.reply_to_message.from_user.id)) &
+                                   (df["Chat_id"] == str(message.chat.id)), "karma"]) - 1
+                df.loc[(df["User_id"] == str(message.reply_to_message.from_user.id)) &
+                       (df["Chat_id"] == str(message.chat.id)), "karma"] = karma
+            else:
+                await message.reply("у вас не достаточно очков действий. обновите их")
+    #         else:
+    #             return
+    #     else:
+    #         await message.reply("у вас не достаточно очков действий. обновите их")
+    #         return
+    # return
 
 
 @dp.message_handler(content_types=["new_chat_members"])
@@ -146,7 +192,7 @@ async def on_user_joined(message: types.Message):
                                    )
 
 
-@dp.message_handler(is_admin=True, commands=["ban"])
+@dp.message_handler(is_admin=True, commands=["ban", "kick", "b"])
 async def cmd_ban(message: types.Message):
     if not message.reply_to_message:
         await message.reply(TEXT.REPLY_ANSWER)
@@ -182,6 +228,11 @@ async def check_my_karma(message: types.Message):
     await message_counter(message, flag=False)
     karma = int(df.loc[(df["User_id"] == str(message.from_user.id)) & (df["Chat_id"] == str(message.chat.id)), "karma"])
     await message.reply(TEXT.you_karma(karma))
+
+
+@dp.message_handler(is_admin=True, commands=["admin_help", "ah", "ahelp", "adminhelp"])
+async def admin_help(message: types.Message):
+    await message.answer(TEXT.ADMIN_HELP)
 
 
 @dp.message_handler(commands=["help", "h"])
@@ -239,7 +290,7 @@ async def unmute(message: types.Message):
         await message.reply(TEXT.REPLY_ANSWER)
         return
     lvl = int(df.loc[(df["User_id"] == str(message.from_user.id)) &
-                       (df["Chat_id"] == str(message.chat.id)), "lvl"])
+                     (df["Chat_id"] == str(message.chat.id)), "lvl"])
     await bot.restrict_chat_member(chat_id=message.chat.id,
                                    user_id=message.reply_to_message.from_user.id,
                                    permissions=Config.LEVELS_for_PERMISIONS[lvl + 1]
@@ -264,33 +315,52 @@ async def update_action_points(message: types.Message):
 
 @dp.message_handler(commands=["point"])
 async def check_point(message: types.Message):
-    points = df.loc[(df["User_id"] == str(message.from_user.id)) &
-           (df["Chat_id"] == str(message.chat.id)), "action_points"].to_dict()[0]
+    # points = df.loc[(df["User_id"] == str(message.from_user.id)) &
+    #                 (df["Chat_id"] == str(message.chat.id)), "action_points"].to_dict()[0]
+    points = int(df.loc[(df["User_id"] == str(message.from_user.id)) & (df["Chat_id"] == str(message.chat.id)), "action_points"])
     print(points)
     await message.reply(f"У вас осталось {points} очков действий")
 
 
-@dp.message_handler(is_admin=True, commands=["statistics"])
+@dp.message_handler(is_admin = True, commands=["prefix", "p"])
+async def set_prefix(message: types.Message):
+    prefix = message.text.split()[-1]
+    ans = check_prefix(prefix)
+    if ans == "no_len":
+        await message.reply("❗️не допустимая длина префикса\nдлина префикса должна быть в диапозоне от 0 до 16")
+        return
+    elif ans == "not_litters":
+        await message.reply("❗️не допустимый формат префикса\nпрефикс должен состоять только из латинских букв")
+        return
+    else:
+        await bot.set_chat_administrator_custom_title(message.chat.id, message.from_user.id, prefix)
+        await message.reply(f"ваш префикс {prefix}")
+        return
+
+
+@dp.message_handler(commands=["statistics"])
 async def statistics(message: types.Message):
     inline_kb_full = InlineKeyboardMarkup(row_width=2)
     inline_btn_1 = InlineKeyboardButton('самые активные люди чата', callback_data='statistics_people_in_chat')
     inline_btn_2 = InlineKeyboardButton('немного о чате', callback_data='info_about_chat')
+    inline_btn_3 = InlineKeyboardButton('самые активные люди', callback_data='statistics_people_in_world')
     inline_kb_full.add(inline_btn_1)
     inline_kb_full.add(inline_btn_2)
+    inline_kb_full.add(inline_btn_3)
     await message.reply("выберите какую именно статистику вы хотите видеть?", reply_markup=inline_kb_full)
 
 
 @dp.callback_query_handler(text="statistics_people_in_chat")
-async def statistics_people_in_chat_for_admin(call: types.CallbackQuery):
-    global df
-    ans_df = df.loc[df["Chat_id"] == str(call.message.chat.id)].sort_values(by=["message_count"], ascending=False)[:5]
+async def statistics_people_in_chat(call: types.CallbackQuery):
+    ans_df = df.loc[df["Chat_id"] == str(call.message.chat.id)].sort_values(by=["message_count_in_fact"],
+                                                                            ascending=False)[:5]
 
-    await call.message.answer(TEXT.most_activity_people_in_chat(ans_df))
+    await call.message.answer(TEXT.most_activity_people(ans_df))
 
 
 @dp.callback_query_handler(text="info_about_chat")
 async def info_about_chat(call: types.CallbackQuery):
-    count = df.loc[(df["Chat_id"] == str(call.message.chat.id)), "message_count"].sum()
+    count = df.loc[(df["Chat_id"] == str(call.message.chat.id)), "message_count_in_fact"].sum()
     active_users = len(df.loc[(df["Chat_id"] == str(call.message.chat.id)), "message_count"])
     mean_lvl = df.loc[(df["Chat_id"] == str(call.message.chat.id)), "lvl"].mean()
     mean_karma = df.loc[(df["Chat_id"] == str(call.message.chat.id)), "karma"].mean()
@@ -298,10 +368,26 @@ async def info_about_chat(call: types.CallbackQuery):
     await call.message.answer(TEXT.info(count, active_users, round(mean_lvl, 2), round(mean_karma, 2)))
 
 
+@dp.callback_query_handler(text="statistics_people_in_world")
+async def statistics_people_in_world(call: types.CallbackQuery):
+    ans_df = df_global.sort_values(by=["message_count"], ascending=False)[:5]
+
+    await call.message.answer(TEXT.most_activity_people(ans_df, in_chat=False))
+
+
+@dp.message_handler(commands=["cat", "new_cat"])
+async def new_cat_for_chat(message: types.Message):
+    photo = await new_cat(flag=False)
+    await message.answer_photo(photo)
+
+
 @dp.message_handler()
 async def echo(message: types.Message):
+    if message.text[0] == "/":
+        await message.reply("Мне жаль, я не знаю такую команду.\nИспользуй /help что бы посмотреть что я умею")
     await update_karma(message)
     await message_counter(message)
+    # print(message.chat.shifted_id)
 
 
 if __name__ == '__main__':

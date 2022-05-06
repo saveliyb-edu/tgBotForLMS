@@ -1,8 +1,11 @@
 from aiogram import types
+import time
 
 
 class Config:
     TOKEN = "token"
+    cat_time_delta = 24 * 3600
+    cat_time = int(time.time())
     LEVELS = {
         1: 0,
         2: 3,
@@ -78,3 +81,4 @@ class Config:
                                  ),
     }
     MAX_LEVEL = 6
+    TIMING = 3600 * 24
