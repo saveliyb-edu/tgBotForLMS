@@ -30,7 +30,7 @@ def check_prefix(prefix) -> str:
         return "no_len"
 
 
-async def new_cat(flag: bool =True):
+async def new_cat(flag: bool = True):
     """загружаем нового кота"""
     async with aiohttp.ClientSession().get("https://thiscatdoesnotexist.com/") as response:
         content = await response.read()

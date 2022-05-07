@@ -2,7 +2,6 @@ import asyncio
 import time
 
 import aiogram
-import requests
 from aiogram import types
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.contrib.fsm_storage.memory import MemoryStorage
@@ -228,7 +227,7 @@ async def admin_help(message: types.Message):
 
 
 @dp.message_handler(commands=["help", "h"])
-async def help(message: types.Message):
+async def help_func(message: types.Message):
     """спарвка обычного юзера"""
     await message.answer(TEXT.HELP)
 
@@ -312,12 +311,13 @@ async def update_action_points(message: types.Message):
 @dp.message_handler(commands=["point"])
 async def check_point(message: types.Message):
     """посмотреть сколько очков действий у юзера сейчас"""
-    points = int(df.loc[(df["User_id"] == str(message.from_user.id)) & (df["Chat_id"] == str(message.chat.id)), "action_points"])
+    points = int(df.loc[(df["User_id"] == str(message.from_user.id)) &
+                        (df["Chat_id"] == str(message.chat.id)), "action_points"])
     print(points)
     await message.reply(f"У вас осталось {points} очков действий")
 
 
-@dp.message_handler(is_admin = True, commands=["prefix", "p"])
+@dp.message_handler(is_admin=True, commands=["prefix", "p"])
 async def set_prefix(message: types.Message):
     """изменение префикса админа (кроме создателя чата)"""
     prefix = message.text.split()[-1]
@@ -396,6 +396,7 @@ async def loop():
     await asyncio.sleep(1800)
     df.to_csv("chats.csv", sep=";")
     df_global.to_csv("global.csv", sep=";")
+
 
 if os.name == 'nt':
     asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
