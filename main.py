@@ -13,7 +13,7 @@ from filters import IsAdminFilter
 
 from CONFIG import Config
 from func import *
-
+import threading
 import logging
 
 logging.basicConfig(level=logging.INFO)
@@ -41,17 +41,18 @@ async def message_counter(message: types.Message, flag=True):
             karma = int(df.loc[(df["User_id"] == str(message.from_user.id)) &
                                (df["Chat_id"] == str(message.chat.id)), "karma"])
 
-            numb_ = numb
-
             if karma > 10:
-                numb_ += karma // 10
+                numb += karma // 10
 
             df.loc[(df["User_id"] == str(message.from_user.id)) &
-                   (df["Chat_id"] == str(message.chat.id)), "message_count"] = numb_
-            df.loc[(df["User_id"] == str(message.from_user.id)) &
-                   (df["Chat_id"] == str(message.chat.id)), "message_count_in_fact"] = numb
+                   (df["Chat_id"] == str(message.chat.id)), "message_count"] = numb
 
-            df_global.loc[(df["User_id"] == str(message.from_user.id)), "message_count"] = numb
+            numb_fact = df.loc[(df["User_id"] == str(message.from_user.id)) &
+                   (df["Chat_id"] == str(message.chat.id)), "message_count_in_fact"]
+
+            df.loc[(df["User_id"] == str(message.from_user.id)) &
+                   (df["Chat_id"] == str(message.chat.id)), "message_count_in_fact"] = numb_fact + 1
+
     else:
         df2 = pd.DataFrame({
             "User_id": str(message.from_user.id),
@@ -66,15 +67,19 @@ async def message_counter(message: types.Message, flag=True):
             "action_time": int(time.time())
         }, index=[0])
         df = pd.concat((df, df2), ignore_index=True)
+    if len(df_global[(df_global["User_id"] == str(message.from_user.id))]) > 0:
+        if flag:
+            numb_fact = int(df_global.loc[(df_global["User_id"] == str(message.from_user.id)), "message_count"]) + 1
 
+            df_global.loc[df_global["User_id"] == str(message.from_user.id), "message_count"] = numb_fact
+    else:
         df2 = pd.DataFrame({
             "User_id": str(message.from_user.id),
             "name": str(message.from_user.first_name),
-            "message_count": 0,
+            "message_count": 1,
             "karma": 0
-        }, index=[0])
+            }, index=[0])
         df_global = pd.concat((df_global, df2), ignore_index=True)
-    print(df[:])
 
 
 async def check2karma(message: types.Message):
@@ -236,7 +241,6 @@ async def help_func(message: types.Message):
 async def mute(message: types.Message):
     """замьютить пользователя"""
     global df
-    print(message.text)
     if not message.reply_to_message:
         await message.reply(TEXT.REPLY_ANSWER)
         return
@@ -279,7 +283,6 @@ async def mute(message: types.Message):
 async def unmute(message: types.Message):
     """размьютить пользователя"""
     global df
-    print(message.text)
     if not message.reply_to_message:
         await message.reply(TEXT.REPLY_ANSWER)
         return
@@ -313,7 +316,6 @@ async def check_point(message: types.Message):
     """посмотреть сколько очков действий у юзера сейчас"""
     points = int(df.loc[(df["User_id"] == str(message.from_user.id)) &
                         (df["Chat_id"] == str(message.chat.id)), "action_points"])
-    print(points)
     await message.reply(f"У вас осталось {points} очков действий")
 
 
@@ -363,7 +365,6 @@ async def info_about_chat(call: types.CallbackQuery):
     active_users = len(df.loc[(df["Chat_id"] == str(call.message.chat.id)), "message_count"])
     mean_lvl = df.loc[(df["Chat_id"] == str(call.message.chat.id)), "lvl"].mean()
     mean_karma = df.loc[(df["Chat_id"] == str(call.message.chat.id)), "karma"].mean()
-    print(count, active_users, mean_lvl, mean_karma)
     await call.message.answer(TEXT.info(count, active_users, round(mean_lvl, 2), round(mean_karma, 2)))
 
 
@@ -385,22 +386,23 @@ async def new_cat_for_chat(message: types.Message):
 @dp.message_handler()
 async def main(message: types.Message):
     """обработчик всех сообщений не связанных с командой"""
+
+    print(df_global)
+    print(df)
+
     if message.text[0] == "/":
         await message.reply("Мне жаль, я не знаю такую команду.\nИспользуй /help что бы посмотреть что я умею")
     await update_karma(message)
     await message_counter(message)
 
 
-async def loop():
-    """сохранение df каждые пол часа"""
-    await asyncio.sleep(1800)
+def loop():
+    """сохранение df"""
     df.to_csv("chats.csv", sep=";")
     df_global.to_csv("global.csv", sep=";")
 
 
-if os.name == 'nt':
-    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
-
 if __name__ == '__main__':
+    timer = 10 # на каждые пол часа
+    threading.Timer(timer, loop).start()
     aiogram.executor.start_polling(dp)
-    asyncio.run(loop())

@@ -47,8 +47,9 @@ def info(quantity_messages: int, quantity_people: int, mean_lvl: int, mean_karma
 
 
 def not_update_karma(karma_time, timing):
+    second = karma_time + timing - int(time.time())
     return "Вы можете использовать карму не чаще, чем раз в час\n" + \
-        f"PS. Следующий раз через {karma_time + timing - int(time.time())}"
+        f"PS. Следующий раз через {second // 3600} часов {second % 3660 // 60} минут и {second % 60} секунд."
 
 
 def most_activity_people(df: pd.DataFrame, in_chat=True):
