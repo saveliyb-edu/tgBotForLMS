@@ -3,7 +3,7 @@ import time
 
 
 class Config:
-    TOKEN = "5185620134:AAGWB7R1cwXoL6rPhhWSyr4QsnSAT6Y6reE"
+    TOKEN = "token"
     cat_time_delta = 24 * 3600
     cat_time = int(time.time())
     LEVELS = {
